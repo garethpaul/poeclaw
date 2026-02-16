@@ -21,6 +21,12 @@ describe('buildEnvVars', () => {
     expect(result.OPENAI_API_KEY).toBe('sk-openai-key');
   });
 
+  it('includes POE_API_KEY when set directly', () => {
+    const env = createMockEnv({ POE_API_KEY: 'pb-poe-key-1234' });
+    const result = buildEnvVars(env);
+    expect(result.POE_API_KEY).toBe('pb-poe-key-1234');
+  });
+
   // Cloudflare AI Gateway (new native provider)
   it('passes Cloudflare AI Gateway env vars', () => {
     const env = createMockEnv({

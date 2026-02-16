@@ -286,16 +286,17 @@ if (process.env.POE_API_KEY) {
     config.agents.defaults.model = { primary: 'poe/Claude-Sonnet-4.5' };
     console.log('Poe provider configured with API key');
 
-    // Enable HTTP chat completions endpoint for PoeClaw's HTTP API
-    config.gateway.http = config.gateway.http || {};
-    config.gateway.http.endpoints = config.gateway.http.endpoints || {};
-    config.gateway.http.endpoints.chatCompletions = { enabled: true };
-    console.log('HTTP chat completions endpoint enabled');
-
     // Skip device pairing in PoeClaw mode (Worker handles auth)
     config.gateway.controlUi = config.gateway.controlUi || {};
     config.gateway.controlUi.allowInsecureAuth = true;
 }
+
+// Always enable HTTP chat completions endpoint for PoeClaw's HTTP API
+// (independent of POE_API_KEY — any configured provider should be reachable via HTTP)
+config.gateway.http = config.gateway.http || {};
+config.gateway.http.endpoints = config.gateway.http.endpoints || {};
+config.gateway.http.endpoints.chatCompletions = { enabled: true };
+console.log('HTTP chat completions endpoint enabled');
 
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 console.log('Configuration patched successfully');
