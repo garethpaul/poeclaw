@@ -6,7 +6,7 @@ We welcome contributions, but with a few short rules:
 
 - **You cannot be offended if we close a PR** or otherwise decide not to merge your work. We're maintaining Moltworker for (many, many) others, and we're ultimately the ones that have to maintain the code. This is especially true if we believe your PR to be AI driven without any human-in-the-loop review or explanation. Not all ideas or work makes it. If it's critical to your workflow, you can fork it!
 
-- **Demonstrate that you've tested your work** - whether via manual testing, automated tests, or a mix of both. You may be quizzed here.
+- **Demonstrate that you've tested your work** - run `make check` (typecheck, lint, format, tests) before submitting. You may be quizzed here.
 
 ## AI Contributions
 

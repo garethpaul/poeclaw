@@ -99,9 +99,9 @@ describe('encryptApiKey / decryptApiKey', () => {
 
   it('fails to decrypt with wrong secret', async () => {
     const encrypted = await encryptApiKey('pb-test-key', TEST_ENCRYPTION_SECRET);
-    await expect(
-      decryptApiKey(encrypted, 'wrong-secret-wrong-secret-12345'),
-    ).rejects.toThrow(/operation/i);
+    await expect(decryptApiKey(encrypted, 'wrong-secret-wrong-secret-12345')).rejects.toThrow(
+      /operation/i,
+    );
   });
 });
 

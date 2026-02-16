@@ -45,10 +45,12 @@ Each command will prompt you to confirm. That's it for required setup — users 
 ## Step 3: Deploy
 
 ```bash
-npm run deploy
+make deploy
 ```
 
 This builds the React client, bundles the Worker, builds the container image, and deploys everything to Cloudflare. First deploy takes a few minutes while the container image uploads.
+
+> Run `make help` to see all available commands.
 
 Your app is now live at:
 
@@ -101,8 +103,10 @@ MOLTBOT_GATEWAY_TOKEN=dev-token
 ### 2. Start the Worker
 
 ```bash
-npm run start
+make dev
 ```
+
+This kills stale containers and clears wrangler state before starting. Use `make dev-fast` to skip cleanup.
 
 Open http://localhost:8787. In dev mode, you skip the login page and go straight to the chat interface.
 
@@ -148,7 +152,7 @@ npx wrangler secret put CF_ACCOUNT_ID
 ### 3. Redeploy
 
 ```bash
-npm run deploy
+make deploy
 ```
 
 R2 is now active. Each user's data is stored under `users/{userHash}/openclaw/` in the `moltbot-data` bucket, synced every 30 seconds via rclone inside the container.
@@ -191,27 +195,26 @@ Then access (requires valid session):
 ## Testing and Development
 
 ```bash
-# Run the test suite
-npm test
+# Run ALL checks (typecheck, lint, format, test) — mirrors CI
+make check
+
+# Run tests only
+make test
 
 # Watch mode for TDD
-npm run test:watch
+make test-watch
 
 # Type checking (TypeScript strict mode)
-npm run typecheck
+make typecheck
 
 # Lint
-npm run lint
+make lint
 
-# Format check
-npm run format:check
+# Auto-fix lint + format issues
+make fix
 ```
 
-Run all three before considering work complete:
-
-```bash
-npm run typecheck && npm run lint && npm test
-```
+Run `make check` before considering work complete.
 
 ---
 
@@ -223,7 +226,7 @@ npm run typecheck && npm run lint && npm test
 | "Server configuration error" | `SESSION_SECRET` or `ENCRYPTION_SECRET` not set. Re-run Step 2 |
 | Slow first request (1-2 min) | Normal — container is booting. Subsequent requests are fast |
 | Data lost after inactivity | Configure R2 storage (see above) or set `SANDBOX_SLEEP_AFTER=never` |
-| `npm run start` fails with "Unauthorized" | Enable Containers in [dashboard](https://dash.cloudflare.com/?to=/:account/workers/containers) |
+| `make dev` fails with "Unauthorized" | Enable Containers in [dashboard](https://dash.cloudflare.com/?to=/:account/workers/containers) |
 | Gateway exit code 126 (Windows) | CRLF line endings. Run `git config --global core.autocrlf input` and re-clone |
 
 ---

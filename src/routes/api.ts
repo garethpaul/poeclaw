@@ -12,12 +12,44 @@ import {
 const CLI_TIMEOUT_MS = 20000;
 
 /**
- * API routes
- * - /api/admin/* - Protected admin API routes (Cloudflare Access required)
- *
- * Note: /api/status is now handled by publicRoutes (no auth required)
+ * API routes (all protected by session middleware)
+ * - /api/status  - Gateway health check (triggers boot if not running)
+ * - /api/admin/* - Admin API routes (Cloudflare Access required)
  */
 const api = new Hono<AppEnv>();
+
+// GET /api/status - Gateway health check, triggers boot if not running
+api.get('/status', async (c) => {
+  const sandbox = c.get('sandbox');
+
+  try {
+    const process = await findExistingMoltbotProcess(sandbox);
+    if (!process) {
+      // Gateway not running — start it in the background so the SPA's
+      // polling loop will eventually see it as 'running'
+      c.executionCtx.waitUntil(
+        ensureMoltbotGateway(sandbox, c.env).catch((err: Error) => {
+          console.error('[STATUS] Background gateway start failed:', err);
+        }),
+      );
+      return c.json({ ok: false, status: 'booting' });
+    }
+
+    // Process exists, check if it's actually responding
+    try {
+      await process.waitForPort(18789, { mode: 'tcp', timeout: 5000 });
+      return c.json({ ok: true, status: 'running', processId: process.id });
+    } catch {
+      return c.json({ ok: false, status: 'not_responding', processId: process.id });
+    }
+  } catch (err) {
+    return c.json({
+      ok: false,
+      status: 'error',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
 
 /**
  * Admin API routes - all protected by Cloudflare Access

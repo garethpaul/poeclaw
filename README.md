@@ -57,8 +57,10 @@ echo "$(openssl rand -hex 32)" | npx wrangler secret put ENCRYPTION_SECRET
 echo "$(openssl rand -hex 32)" | npx wrangler secret put MOLTBOT_GATEWAY_TOKEN
 
 # Deploy
-npm run deploy
+make deploy
 ```
+
+> Run `make help` to see all available commands.
 
 After deploying, visit your worker URL:
 
@@ -110,7 +112,13 @@ No Cloudflare Access setup is needed. Each user authenticates with their own Poe
 
 ### Local Development
 
-For local development, create a `.dev.vars` file:
+Start the dev server with `make dev` (cleans stale containers first) or `make dev-fast` (skip cleanup):
+
+```bash
+make dev
+```
+
+Create a `.dev.vars` file for local config:
 
 ```bash
 DEV_MODE=true               # Skip session auth, use a single sandbox
@@ -175,7 +183,7 @@ The worker includes a Chrome DevTools Protocol (CDP) shim for browser automation
 ```bash
 npx wrangler secret put CDP_SECRET       # Shared secret for authentication
 npx wrangler secret put WORKER_URL       # https://poeclaw.your-subdomain.workers.dev
-npm run deploy
+make deploy
 ```
 
 | Endpoint | Description |
@@ -195,7 +203,7 @@ Route API requests through [Cloudflare AI Gateway](https://developers.cloudflare
 npx wrangler secret put CLOUDFLARE_AI_GATEWAY_API_KEY   # Your provider's API key
 npx wrangler secret put CF_AI_GATEWAY_ACCOUNT_ID        # Cloudflare account ID
 npx wrangler secret put CF_AI_GATEWAY_GATEWAY_ID        # AI Gateway ID
-npm run deploy
+make deploy
 ```
 
 When configured, AI Gateway takes precedence over direct API keys. See [AI Gateway docs](https://developers.cloudflare.com/ai-gateway/) for provider options.

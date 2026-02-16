@@ -27,10 +27,7 @@ async function deriveHmacKey(secret: string): Promise<CryptoKey> {
 /**
  * Create a signed session token (base64 of payload + HMAC signature).
  */
-export async function createSessionToken(
-  payload: PoeSessionUser,
-  secret: string,
-): Promise<string> {
+export async function createSessionToken(payload: PoeSessionUser, secret: string): Promise<string> {
   const payloadStr = JSON.stringify(payload);
   const payloadB64 = btoa(payloadStr);
   const key = await deriveHmacKey(secret);

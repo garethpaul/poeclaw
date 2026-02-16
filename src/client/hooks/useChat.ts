@@ -69,10 +69,7 @@ export function useChat(model: string) {
               const delta = parsed.choices?.[0]?.delta?.content;
               if (delta) {
                 assistantContent += delta;
-                setMessages([
-                  ...updatedMessages,
-                  { role: 'assistant', content: assistantContent },
-                ]);
+                setMessages([...updatedMessages, { role: 'assistant', content: assistantContent }]);
               }
             } catch {
               // Skip unparseable SSE lines

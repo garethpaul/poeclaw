@@ -27,8 +27,27 @@ Read [`docs/PHILOSOPHY.md`](./docs/PHILOSOPHY.md) before making changes. It defi
 
 ## Commands
 
+Use `make` as the primary interface. Run `make help` to see all targets.
+
 ```bash
-npm test              # Run tests (vitest)
+make check            # Run ALL checks: typecheck, lint, format, test (use before completing work)
+make test             # Run tests (vitest)
+make test-watch       # Watch mode
+make typecheck        # TypeScript strict check
+make lint             # Run linter (oxlint)
+make fix              # Auto-fix: lint + format
+make build            # Build worker + client
+make deploy           # Build and deploy to Cloudflare
+make dev              # Clean start: kill stale containers, clear state, run dev server
+make clean            # Kill sandbox containers and remove wrangler state
+make status           # Show sandbox containers, images, and listening ports
+```
+
+<details>
+<summary>npm equivalents (for reference)</summary>
+
+```bash
+npm test              # Run tests
 npm run test:watch    # Watch mode
 npm run typecheck     # TypeScript strict check
 npm run lint          # oxlint
@@ -36,6 +55,7 @@ npm run format:check  # oxfmt
 npm run build         # Build worker + client
 npm run deploy        # Build and deploy to Cloudflare
 ```
+</details>
 
 ## Working Here
 
@@ -44,4 +64,4 @@ npm run deploy        # Build and deploy to Cloudflare
 - Tests are colocated: `foo.ts` → `foo.test.ts` in the same directory.
 - Use the existing mock infrastructure in `src/test-utils.ts` for new tests.
 - When adding a test, include a threat-model comment: what failure mode does it catch?
-- Run `npm run typecheck && npm run lint && npm test` before considering work complete.
+- Run `make check` before considering work complete.

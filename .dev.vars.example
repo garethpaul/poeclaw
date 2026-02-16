@@ -1,18 +1,24 @@
 # Copy this to .dev.vars and fill in your values
 # .dev.vars is gitignored and used by wrangler dev
 
-# Local development mode - skips session auth, uses single sandbox
+# ──────────────────────────────────────────────
+# Mode A: Quick dev (skip login, straight to chat)
+# ──────────────────────────────────────────────
 DEV_MODE=true
+
+# ──────────────────────────────────────────────
+# Mode B: Full Poe login flow (paste API key, get chat)
+# Comment out DEV_MODE and uncomment the session secrets below.
+# ──────────────────────────────────────────────
+# DEV_MODE=true
+# SESSION_SECRET=dev-session-secret-32-chars-minimum
+# ENCRYPTION_SECRET=dev-encrypt-secret-32-chars-minimum
 
 # Enable debug routes at /debug/* (optional)
 # DEBUG_ROUTES=true
 
 # Gateway token (any string works for local dev)
 MOLTBOT_GATEWAY_TOKEN=dev-token-change-in-prod
-
-# PoeClaw session auth (not needed when DEV_MODE=true)
-# SESSION_SECRET=dev-session-secret-32-chars-minimum
-# ENCRYPTION_SECRET=dev-encrypt-secret-32-chars-minimum
 
 # AI Provider (optional - users bring their own Poe keys in production)
 # For local dev without Poe, set one of these:
