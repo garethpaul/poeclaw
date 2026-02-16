@@ -374,13 +374,14 @@ app.all('*', async (c) => {
     });
   }
 
-  // Inject gateway token into HTTP request if not already present.
+  // Inject gateway token into HTTP request via Authorization header.
+  // The OpenAI-compatible HTTP endpoint uses Bearer auth for the gateway token.
   // Session auth replaces CF Access, so we inject the token server-side.
   let httpRequest = request;
-  if (c.env.MOLTBOT_GATEWAY_TOKEN && !url.searchParams.has('token')) {
-    const tokenUrl = new URL(url.toString());
-    tokenUrl.searchParams.set('token', c.env.MOLTBOT_GATEWAY_TOKEN);
-    httpRequest = new Request(tokenUrl.toString(), request);
+  if (c.env.MOLTBOT_GATEWAY_TOKEN) {
+    const headers = new Headers(request.headers);
+    headers.set('Authorization', `Bearer ${c.env.MOLTBOT_GATEWAY_TOKEN}`);
+    httpRequest = new Request(request, { headers });
   }
 
   console.log('[HTTP] Proxying:', url.pathname + url.search);
