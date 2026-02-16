@@ -34,6 +34,7 @@ r2_configured() {
 }
 
 R2_BUCKET="${R2_BUCKET_NAME:-moltbot-data}"
+R2_USER_PREFIX="${R2_USER_PREFIX:-}"
 
 setup_rclone() {
     mkdir -p "$(dirname "$RCLONE_CONF")"
@@ -62,9 +63,9 @@ if r2_configured; then
 
     echo "Checking R2 for existing backup..."
     # Check if R2 has an openclaw config backup
-    if rclone ls "r2:${R2_BUCKET}/openclaw/openclaw.json" $RCLONE_FLAGS 2>/dev/null | grep -q openclaw.json; then
+    if rclone ls "r2:${R2_BUCKET}/${R2_USER_PREFIX:+users/${R2_USER_PREFIX}/}openclaw/openclaw.json" $RCLONE_FLAGS 2>/dev/null | grep -q openclaw.json; then
         echo "Restoring config from R2..."
-        rclone copy "r2:${R2_BUCKET}/openclaw/" "$CONFIG_DIR/" $RCLONE_FLAGS -v 2>&1 || echo "WARNING: config restore failed with exit code $?"
+        rclone copy "r2:${R2_BUCKET}/${R2_USER_PREFIX:+users/${R2_USER_PREFIX}/}openclaw/" "$CONFIG_DIR/" $RCLONE_FLAGS -v 2>&1 || echo "WARNING: config restore failed with exit code $?"
         echo "Config restored"
     elif rclone ls "r2:${R2_BUCKET}/clawdbot/clawdbot.json" $RCLONE_FLAGS 2>/dev/null | grep -q clawdbot.json; then
         echo "Restoring from legacy R2 backup..."
@@ -78,20 +79,20 @@ if r2_configured; then
     fi
 
     # Restore workspace
-    REMOTE_WS_COUNT=$(rclone ls "r2:${R2_BUCKET}/workspace/" $RCLONE_FLAGS 2>/dev/null | wc -l)
+    REMOTE_WS_COUNT=$(rclone ls "r2:${R2_BUCKET}/${R2_USER_PREFIX:+users/${R2_USER_PREFIX}/}workspace/" $RCLONE_FLAGS 2>/dev/null | wc -l)
     if [ "$REMOTE_WS_COUNT" -gt 0 ]; then
         echo "Restoring workspace from R2 ($REMOTE_WS_COUNT files)..."
         mkdir -p "$WORKSPACE_DIR"
-        rclone copy "r2:${R2_BUCKET}/workspace/" "$WORKSPACE_DIR/" $RCLONE_FLAGS -v 2>&1 || echo "WARNING: workspace restore failed with exit code $?"
+        rclone copy "r2:${R2_BUCKET}/${R2_USER_PREFIX:+users/${R2_USER_PREFIX}/}workspace/" "$WORKSPACE_DIR/" $RCLONE_FLAGS -v 2>&1 || echo "WARNING: workspace restore failed with exit code $?"
         echo "Workspace restored"
     fi
 
     # Restore skills
-    REMOTE_SK_COUNT=$(rclone ls "r2:${R2_BUCKET}/skills/" $RCLONE_FLAGS 2>/dev/null | wc -l)
+    REMOTE_SK_COUNT=$(rclone ls "r2:${R2_BUCKET}/${R2_USER_PREFIX:+users/${R2_USER_PREFIX}/}skills/" $RCLONE_FLAGS 2>/dev/null | wc -l)
     if [ "$REMOTE_SK_COUNT" -gt 0 ]; then
         echo "Restoring skills from R2 ($REMOTE_SK_COUNT files)..."
         mkdir -p "$SKILLS_DIR"
-        rclone copy "r2:${R2_BUCKET}/skills/" "$SKILLS_DIR/" $RCLONE_FLAGS -v 2>&1 || echo "WARNING: skills restore failed with exit code $?"
+        rclone copy "r2:${R2_BUCKET}/${R2_USER_PREFIX:+users/${R2_USER_PREFIX}/}skills/" "$SKILLS_DIR/" $RCLONE_FLAGS -v 2>&1 || echo "WARNING: skills restore failed with exit code $?"
         echo "Skills restored"
     fi
 else
@@ -114,6 +115,10 @@ if [ ! -f "$CONFIG_FILE" ]; then
         AUTH_ARGS="--auth-choice apiKey --anthropic-api-key $ANTHROPIC_API_KEY"
     elif [ -n "$OPENAI_API_KEY" ]; then
         AUTH_ARGS="--auth-choice openai-api-key --openai-api-key $OPENAI_API_KEY"
+    elif [ -n "$POE_API_KEY" ]; then
+        # Poe uses OpenAI-compatible API — onboard with a dummy key,
+        # then patch the config with the real Poe provider below
+        AUTH_ARGS="--auth-choice openai-api-key --openai-api-key dummy-for-poe"
     fi
 
     openclaw onboard --non-interactive --accept-risk \
@@ -260,6 +265,38 @@ if (process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN) {
     };
 }
 
+// Poe provider configuration (PoeClaw multi-tenant)
+if (process.env.POE_API_KEY) {
+    config.models = config.models || {};
+    config.models.providers = config.models.providers || {};
+    config.models.providers.poe = {
+        baseUrl: 'https://api.poe.com/v1',
+        apiKey: process.env.POE_API_KEY,
+        api: 'openai-completions',
+        models: [
+            { id: 'Claude-Sonnet-4.5', name: 'Claude Sonnet 4.5', contextWindow: 200000, maxTokens: 8192 },
+            { id: 'GPT-5.2', name: 'GPT 5.2', contextWindow: 128000, maxTokens: 8192 },
+            { id: 'Gemini-3-Pro', name: 'Gemini 3 Pro', contextWindow: 128000, maxTokens: 8192 },
+        ],
+    };
+
+    // Set Poe as the default model provider
+    config.agents = config.agents || {};
+    config.agents.defaults = config.agents.defaults || {};
+    config.agents.defaults.model = { primary: 'poe/Claude-Sonnet-4.5' };
+    console.log('Poe provider configured with API key');
+
+    // Enable HTTP chat completions endpoint for PoeClaw's HTTP API
+    config.gateway.http = config.gateway.http || {};
+    config.gateway.http.endpoints = config.gateway.http.endpoints || {};
+    config.gateway.http.endpoints.chatCompletions = { enabled: true };
+    console.log('HTTP chat completions endpoint enabled');
+
+    // Skip device pairing in PoeClaw mode (Worker handles auth)
+    config.gateway.controlUi = config.gateway.controlUi || {};
+    config.gateway.controlUi.allowInsecureAuth = true;
+}
+
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 console.log('Configuration patched successfully');
 EOFPATCH
@@ -290,14 +327,14 @@ if r2_configured; then
 
             if [ "$COUNT" -gt 0 ]; then
                 echo "[sync] Uploading changes ($COUNT files) at $(date)" >> "$LOGFILE"
-                rclone sync "$CONFIG_DIR/" "r2:${R2_BUCKET}/openclaw/" \
+                rclone sync "$CONFIG_DIR/" "r2:${R2_BUCKET}/${R2_USER_PREFIX:+users/${R2_USER_PREFIX}/}openclaw/" \
                     $RCLONE_FLAGS --exclude='*.lock' --exclude='*.log' --exclude='*.tmp' --exclude='.git/**' 2>> "$LOGFILE"
                 if [ -d "$WORKSPACE_DIR" ]; then
-                    rclone sync "$WORKSPACE_DIR/" "r2:${R2_BUCKET}/workspace/" \
+                    rclone sync "$WORKSPACE_DIR/" "r2:${R2_BUCKET}/${R2_USER_PREFIX:+users/${R2_USER_PREFIX}/}workspace/" \
                         $RCLONE_FLAGS --exclude='skills/**' --exclude='.git/**' --exclude='node_modules/**' 2>> "$LOGFILE"
                 fi
                 if [ -d "$SKILLS_DIR" ]; then
-                    rclone sync "$SKILLS_DIR/" "r2:${R2_BUCKET}/skills/" \
+                    rclone sync "$SKILLS_DIR/" "r2:${R2_BUCKET}/${R2_USER_PREFIX:+users/${R2_USER_PREFIX}/}skills/" \
                         $RCLONE_FLAGS 2>> "$LOGFILE"
                 fi
                 date -Iseconds > "$LAST_SYNC_FILE"

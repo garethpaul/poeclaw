@@ -6,7 +6,10 @@ import type { MoltbotEnv } from '../types';
  * @param env - Worker environment bindings
  * @returns Environment variables record
  */
-export function buildEnvVars(env: MoltbotEnv): Record<string, string> {
+export function buildEnvVars(
+  env: MoltbotEnv,
+  overrides?: Record<string, string>,
+): Record<string, string> {
   const envVars: Record<string, string> = {};
 
   // Cloudflare AI Gateway configuration (new native provider)
@@ -54,6 +57,11 @@ export function buildEnvVars(env: MoltbotEnv): Record<string, string> {
   if (env.R2_ACCESS_KEY_ID) envVars.R2_ACCESS_KEY_ID = env.R2_ACCESS_KEY_ID;
   if (env.R2_SECRET_ACCESS_KEY) envVars.R2_SECRET_ACCESS_KEY = env.R2_SECRET_ACCESS_KEY;
   if (env.R2_BUCKET_NAME) envVars.R2_BUCKET_NAME = env.R2_BUCKET_NAME;
+
+  // Apply per-user overrides (e.g., POE_API_KEY for PoeClaw)
+  if (overrides) {
+    Object.assign(envVars, overrides);
+  }
 
   return envVars;
 }

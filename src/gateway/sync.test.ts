@@ -137,6 +137,55 @@ describe('syncToR2', () => {
       expect(configCmd).toContain('r2:moltbot-data/openclaw/');
     });
 
+    it('uses user prefix in R2 paths when provided', async () => {
+      const timestamp = '2026-01-27T12:00:00+00:00';
+      const { sandbox, execMock } = createMockSandbox();
+      execMock
+        .mockResolvedValueOnce(createMockExecResult('yes')) // rclone configured
+        .mockResolvedValueOnce(createMockExecResult('openclaw')) // config detect
+        .mockResolvedValueOnce(createMockExecResult()) // rclone sync config
+        .mockResolvedValueOnce(createMockExecResult()) // rclone sync workspace
+        .mockResolvedValueOnce(createMockExecResult()) // rclone sync skills
+        .mockResolvedValueOnce(createMockExecResult()) // date > last-sync
+        .mockResolvedValueOnce(createMockExecResult(timestamp)); // cat last-sync
+
+      const env = createMockEnvWithR2();
+      const result = await syncToR2(sandbox, env, 'abc123');
+
+      expect(result.success).toBe(true);
+
+      // Verify rclone commands include user prefix paths
+      const configCmd = execMock.mock.calls[2][0];
+      expect(configCmd).toContain('users/abc123/openclaw/');
+
+      const workspaceCmd = execMock.mock.calls[3][0];
+      expect(workspaceCmd).toContain('users/abc123/workspace/');
+
+      const skillsCmd = execMock.mock.calls[4][0];
+      expect(skillsCmd).toContain('users/abc123/skills/');
+    });
+
+    it('uses root paths when no user prefix provided', async () => {
+      const timestamp = '2026-01-27T12:00:00+00:00';
+      const { sandbox, execMock } = createMockSandbox();
+      execMock
+        .mockResolvedValueOnce(createMockExecResult('yes'))
+        .mockResolvedValueOnce(createMockExecResult('openclaw'))
+        .mockResolvedValueOnce(createMockExecResult())
+        .mockResolvedValueOnce(createMockExecResult())
+        .mockResolvedValueOnce(createMockExecResult())
+        .mockResolvedValueOnce(createMockExecResult())
+        .mockResolvedValueOnce(createMockExecResult(timestamp));
+
+      const env = createMockEnvWithR2();
+      await syncToR2(sandbox, env);
+
+      // Without prefix, should use root paths (backward compatible)
+      const configCmd = execMock.mock.calls[2][0];
+      expect(configCmd).toContain('r2:moltbot-data/openclaw/');
+      expect(configCmd).not.toContain('users/');
+    });
+
     it('uses custom bucket name', async () => {
       const { sandbox, execMock } = createMockSandbox();
       execMock

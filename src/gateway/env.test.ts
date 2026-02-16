@@ -144,6 +144,18 @@ describe('buildEnvVars', () => {
     expect(result.CF_ACCOUNT_ID).toBe('acct-123');
   });
 
+  it('applies per-user env overrides', () => {
+    const env = createMockEnv();
+    const result = buildEnvVars(env, { POE_API_KEY: 'pb-test-key-12345' });
+    expect(result.POE_API_KEY).toBe('pb-test-key-12345');
+  });
+
+  it('overrides take precedence over env vars', () => {
+    const env = createMockEnv({ ANTHROPIC_API_KEY: 'sk-original' });
+    const result = buildEnvVars(env, { ANTHROPIC_API_KEY: 'sk-override' });
+    expect(result.ANTHROPIC_API_KEY).toBe('sk-override');
+  });
+
   it('combines all env vars correctly', () => {
     const env = createMockEnv({
       ANTHROPIC_API_KEY: 'sk-key',

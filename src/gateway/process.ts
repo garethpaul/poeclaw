@@ -53,7 +53,11 @@ export async function findExistingMoltbotProcess(sandbox: Sandbox): Promise<Proc
  * @param env - Worker environment bindings
  * @returns The running gateway process
  */
-export async function ensureMoltbotGateway(sandbox: Sandbox, env: MoltbotEnv): Promise<Process> {
+export async function ensureMoltbotGateway(
+  sandbox: Sandbox,
+  env: MoltbotEnv,
+  envOverrides?: Record<string, string>,
+): Promise<Process> {
   // Configure rclone for R2 persistence (non-blocking if not configured).
   // The startup script uses rclone to restore data from R2 on boot.
   await ensureRcloneConfig(sandbox, env);
@@ -90,7 +94,7 @@ export async function ensureMoltbotGateway(sandbox: Sandbox, env: MoltbotEnv): P
 
   // Start a new OpenClaw gateway
   console.log('Starting new OpenClaw gateway...');
-  const envVars = buildEnvVars(env);
+  const envVars = buildEnvVars(env, envOverrides);
   const command = '/usr/local/bin/start-openclaw.sh';
 
   console.log('Starting process with command:', command);

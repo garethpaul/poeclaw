@@ -1,23 +1,15 @@
 /**
- * Moltbot + Cloudflare Sandbox
+ * PoeClaw - Multi-tenant OpenClaw platform powered by Poe API keys
  *
- * This Worker runs Moltbot personal AI assistant in a Cloudflare Sandbox container.
- * It proxies all requests to the Moltbot Gateway's web UI and WebSocket endpoint.
- *
- * Features:
- * - Web UI (Control Dashboard + WebChat) at /
- * - WebSocket support for real-time communication
- * - Admin UI at /_admin/ for device management
- * - Configuration via environment secrets
+ * User flow:
+ * 1. Visit landing page -> see login page
+ * 2. Paste POE_API_KEY -> validated against Poe API
+ * 3. Session cookie set -> per-user sandbox resolves via getSandbox(env.Sandbox, userHash)
+ * 4. Chat via Poe-style UI using HTTP API + SSE
  *
  * Required secrets (set via `wrangler secret put`):
- * - ANTHROPIC_API_KEY: Your Anthropic API key
- *
- * Optional secrets:
- * - MOLTBOT_GATEWAY_TOKEN: Token to protect gateway access
- * - TELEGRAM_BOT_TOKEN: Telegram bot token
- * - DISCORD_BOT_TOKEN: Discord bot token
- * - SLACK_BOT_TOKEN + SLACK_APP_TOKEN: Slack tokens
+ * - SESSION_SECRET: HMAC-SHA256 key for session cookies
+ * - ENCRYPTION_SECRET: AES-GCM key for encrypting stored API keys
  */
 
 import { Hono } from 'hono';
@@ -25,12 +17,11 @@ import { getSandbox, Sandbox, type SandboxOptions } from '@cloudflare/sandbox';
 
 import type { AppEnv, MoltbotEnv } from './types';
 import { MOLTBOT_PORT } from './config';
-import { createAccessMiddleware } from './auth';
+import { verifySessionToken, extractSessionToken, decryptApiKey } from './auth/session';
 import { ensureMoltbotGateway, findExistingMoltbotProcess } from './gateway';
-import { publicRoutes, api, adminUi, debug, cdp } from './routes';
+import { publicRoutes, api, auth, debug, cdp } from './routes';
 import { redactSensitiveParams } from './utils/logging';
 import loadingPageHtml from './assets/loading.html';
-import configErrorHtml from './assets/config-error.html';
 
 /**
  * Transform error messages from the gateway to be more user-friendly.
@@ -50,67 +41,17 @@ function transformErrorMessage(message: string, host: string): string {
 export { Sandbox };
 
 /**
- * Validate required environment variables.
- * Returns an array of missing variable descriptions, or empty array if all are set.
- */
-function validateRequiredEnv(env: MoltbotEnv): string[] {
-  const missing: string[] = [];
-  const isTestMode = env.DEV_MODE === 'true' || env.E2E_TEST_MODE === 'true';
-
-  if (!env.MOLTBOT_GATEWAY_TOKEN) {
-    missing.push('MOLTBOT_GATEWAY_TOKEN');
-  }
-
-  // CF Access vars not required in dev/test mode since auth is skipped
-  if (!isTestMode) {
-    if (!env.CF_ACCESS_TEAM_DOMAIN) {
-      missing.push('CF_ACCESS_TEAM_DOMAIN');
-    }
-
-    if (!env.CF_ACCESS_AUD) {
-      missing.push('CF_ACCESS_AUD');
-    }
-  }
-
-  // Check for AI provider configuration (at least one must be set)
-  const hasCloudflareGateway = !!(
-    env.CLOUDFLARE_AI_GATEWAY_API_KEY &&
-    env.CF_AI_GATEWAY_ACCOUNT_ID &&
-    env.CF_AI_GATEWAY_GATEWAY_ID
-  );
-  const hasLegacyGateway = !!(env.AI_GATEWAY_API_KEY && env.AI_GATEWAY_BASE_URL);
-  const hasAnthropicKey = !!env.ANTHROPIC_API_KEY;
-  const hasOpenAIKey = !!env.OPENAI_API_KEY;
-
-  if (!hasCloudflareGateway && !hasLegacyGateway && !hasAnthropicKey && !hasOpenAIKey) {
-    missing.push(
-      'ANTHROPIC_API_KEY, OPENAI_API_KEY, or CLOUDFLARE_AI_GATEWAY_API_KEY + CF_AI_GATEWAY_ACCOUNT_ID + CF_AI_GATEWAY_GATEWAY_ID',
-    );
-  }
-
-  return missing;
-}
-
-/**
- * Build sandbox options based on environment configuration.
- *
- * SANDBOX_SLEEP_AFTER controls how long the container stays alive after inactivity:
- * - 'never' (default): Container stays alive indefinitely (recommended due to long cold starts)
- * - Duration string: e.g., '10m', '1h', '30s' - container sleeps after this period of inactivity
- *
- * To reduce costs at the expense of cold start latency, set SANDBOX_SLEEP_AFTER to a duration:
- *   npx wrangler secret put SANDBOX_SLEEP_AFTER
- *   # Enter: 10m (or 1h, 30m, etc.)
+ * Build sandbox options for multi-tenant PoeClaw.
+ * Default is sleepAfter '1h' to bound per-user container memory.
+ * Use 'never' (keepAlive) only for single-tenant dev mode.
  */
 function buildSandboxOptions(env: MoltbotEnv): SandboxOptions {
-  const sleepAfter = env.SANDBOX_SLEEP_AFTER?.toLowerCase() || 'never';
+  const sleepAfter = env.SANDBOX_SLEEP_AFTER?.toLowerCase() || '1h';
 
-  // 'never' means keep the container alive indefinitely
   if (sleepAfter === 'never') {
     return { keepAlive: true };
   }
 
-  // Otherwise, use the specified duration
   return { sleepAfter };
 }
 
@@ -126,94 +67,92 @@ app.use('*', async (c, next) => {
   const url = new URL(c.req.url);
   const redactedSearch = redactSensitiveParams(url);
   console.log(`[REQ] ${c.req.method} ${url.pathname}${redactedSearch}`);
-  console.log(`[REQ] Has ANTHROPIC_API_KEY: ${!!c.env.ANTHROPIC_API_KEY}`);
-  console.log(`[REQ] DEV_MODE: ${c.env.DEV_MODE}`);
-  console.log(`[REQ] DEBUG_ROUTES: ${c.env.DEBUG_ROUTES}`);
   await next();
 });
 
-// Middleware: Initialize sandbox for all requests
+// Middleware: Security headers
 app.use('*', async (c, next) => {
-  const options = buildSandboxOptions(c.env);
-  const sandbox = getSandbox(c.env.Sandbox, 'moltbot', options);
-  c.set('sandbox', sandbox);
   await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('X-Frame-Options', 'DENY');
+  c.header(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
+  );
 });
 
 // =============================================================================
-// PUBLIC ROUTES: No Cloudflare Access authentication required
+// PUBLIC ROUTES: No authentication required
 // =============================================================================
 
-// Mount public routes first (before auth middleware)
-// Includes: /sandbox-health, /logo.png, /logo-small.png, /api/status, /_admin/assets/*
+// Health checks, logos, static assets
 app.route('/', publicRoutes);
 
-// Mount CDP routes (uses shared secret auth via query param, not CF Access)
+// CDP routes (shared secret auth via query param)
 app.route('/cdp', cdp);
 
+// Auth routes (login/logout/me) — mounted before session middleware
+// Login creates a session (doesn't need one); logout/me handle their own checks
+app.route('/api/auth', auth);
+
 // =============================================================================
-// PROTECTED ROUTES: Cloudflare Access authentication required
+// SESSION MIDDLEWARE: Verify session cookie, resolve per-user sandbox
 // =============================================================================
 
-// Middleware: Validate required environment variables (skip in dev mode and for debug routes)
 app.use('*', async (c, next) => {
-  const url = new URL(c.req.url);
-
-  // Skip validation for debug routes (they have their own enable check)
-  if (url.pathname.startsWith('/debug')) {
-    return next();
-  }
-
-  // Skip validation in dev mode
+  // Dev mode: skip session auth, use a single sandbox
   if (c.env.DEV_MODE === 'true') {
+    const options = buildSandboxOptions(c.env);
+    const sandbox = getSandbox(c.env.Sandbox, 'dev-user', options);
+    c.set('sandbox', sandbox);
     return next();
   }
 
-  const missingVars = validateRequiredEnv(c.env);
-  if (missingVars.length > 0) {
-    console.error('[CONFIG] Missing required environment variables:', missingVars.join(', '));
+  const sessionSecret = c.env.SESSION_SECRET;
+  if (!sessionSecret) {
+    return c.json({ error: 'Server not configured (missing SESSION_SECRET)' }, 500);
+  }
 
+  // Extract session token from cookie
+  const cookieHeader = c.req.header('Cookie');
+  const token = extractSessionToken(cookieHeader);
+
+  if (!token) {
+    // No session — redirect to login for HTML requests, 401 for API
     const acceptsHtml = c.req.header('Accept')?.includes('text/html');
     if (acceptsHtml) {
-      // Return a user-friendly HTML error page
-      const html = configErrorHtml.replace('{{MISSING_VARS}}', missingVars.join(', '));
-      return c.html(html, 503);
+      return c.redirect('/');
     }
-
-    // Return JSON error for API requests
-    return c.json(
-      {
-        error: 'Configuration error',
-        message: 'Required environment variables are not configured',
-        missing: missingVars,
-        hint: 'Set these using: wrangler secret put <VARIABLE_NAME>',
-      },
-      503,
-    );
+    return c.json({ error: 'Authentication required', hint: 'POST /api/auth/login' }, 401);
   }
 
-  return next();
+  // Verify session token
+  const poeUser = await verifySessionToken(token, sessionSecret);
+  if (!poeUser) {
+    const acceptsHtml = c.req.header('Accept')?.includes('text/html');
+    if (acceptsHtml) {
+      return c.redirect('/');
+    }
+    return c.json({ error: 'Session expired or invalid' }, 401);
+  }
+
+  // Resolve per-user sandbox
+  const options = buildSandboxOptions(c.env);
+  const sandbox = getSandbox(c.env.Sandbox, poeUser.userHash, options);
+  c.set('sandbox', sandbox);
+  c.set('poeUser', poeUser);
+
+  await next();
 });
 
-// Middleware: Cloudflare Access authentication for protected routes
-app.use('*', async (c, next) => {
-  // Determine response type based on Accept header
-  const acceptsHtml = c.req.header('Accept')?.includes('text/html');
-  const middleware = createAccessMiddleware({
-    type: acceptsHtml ? 'html' : 'json',
-    redirectOnMissing: acceptsHtml,
-  });
+// =============================================================================
+// PROTECTED ROUTES: Session required
+// =============================================================================
 
-  return middleware(c, next);
-});
-
-// Mount API routes (protected by Cloudflare Access)
+// Mount API routes
 app.route('/api', api);
 
-// Mount Admin UI routes (protected by Cloudflare Access)
-app.route('/_admin', adminUi);
-
-// Mount debug routes (protected by Cloudflare Access, only when DEBUG_ROUTES is enabled)
+// Mount debug routes (session + DEBUG_ROUTES flag)
 app.use('/debug/*', async (c, next) => {
   if (c.env.DEBUG_ROUTES !== 'true') {
     return c.json({ error: 'Debug routes are disabled' }, 404);
@@ -223,7 +162,7 @@ app.use('/debug/*', async (c, next) => {
 app.route('/debug', debug);
 
 // =============================================================================
-// CATCH-ALL: Proxy to Moltbot gateway
+// CATCH-ALL: Proxy to user's OpenClaw gateway
 // =============================================================================
 
 app.all('*', async (c) => {
@@ -232,6 +171,27 @@ app.all('*', async (c) => {
   const url = new URL(request.url);
 
   console.log('[PROXY] Handling request:', url.pathname);
+
+  // Build per-user env overrides for the container process
+  const poeUser = c.get('poeUser');
+  const envOverrides: Record<string, string> = {};
+  if (poeUser?.userHash) {
+    envOverrides.R2_USER_PREFIX = poeUser.userHash;
+    envOverrides.OPENCLAW_DEV_MODE = 'true'; // Skip device pairing in PoeClaw mode
+
+    // Decrypt per-user Poe API key from sandbox storage
+    if (c.env.ENCRYPTION_SECRET) {
+      try {
+        const readResult = await sandbox.exec('cat /tmp/poeclaw/encrypted-key 2>/dev/null || echo ""');
+        const encryptedKey = readResult.stdout?.trim();
+        if (encryptedKey) {
+          envOverrides.POE_API_KEY = await decryptApiKey(encryptedKey, c.env.ENCRYPTION_SECRET);
+        }
+      } catch (err) {
+        console.error('[PROXY] Failed to decrypt POE_API_KEY:', err);
+      }
+    }
+  }
 
   // Check if gateway is already running
   const existingProcess = await findExistingMoltbotProcess(sandbox);
@@ -246,7 +206,7 @@ app.all('*', async (c) => {
 
     // Start the gateway in the background (don't await)
     c.executionCtx.waitUntil(
-      ensureMoltbotGateway(sandbox, c.env).catch((err: Error) => {
+      ensureMoltbotGateway(sandbox, c.env, envOverrides).catch((err: Error) => {
         console.error('[PROXY] Background gateway start failed:', err);
       }),
     );
@@ -255,43 +215,35 @@ app.all('*', async (c) => {
     return c.html(loadingPageHtml);
   }
 
-  // Ensure moltbot is running (this will wait for startup)
+  // Ensure gateway is running (this will wait for startup)
   try {
-    await ensureMoltbotGateway(sandbox, c.env);
+    await ensureMoltbotGateway(sandbox, c.env, envOverrides);
   } catch (error) {
-    console.error('[PROXY] Failed to start Moltbot:', error);
+    console.error('[PROXY] Failed to start gateway:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-    let hint = 'Check worker logs with: wrangler tail';
-    if (!c.env.ANTHROPIC_API_KEY) {
-      hint = 'ANTHROPIC_API_KEY is not set. Run: wrangler secret put ANTHROPIC_API_KEY';
-    } else if (errorMessage.includes('heap out of memory') || errorMessage.includes('OOM')) {
-      hint = 'Gateway ran out of memory. Try again or check for memory leaks.';
-    }
 
     return c.json(
       {
-        error: 'Moltbot gateway failed to start',
+        error: 'Gateway failed to start',
         details: errorMessage,
-        hint,
+        hint: 'Your container may need a moment to boot. Try again.',
       },
       503,
     );
   }
 
-  // Proxy to Moltbot with WebSocket message interception
+  // Proxy to gateway with WebSocket message interception
   if (isWebSocketRequest) {
     const debugLogs = c.env.DEBUG_ROUTES === 'true';
     const redactedSearch = redactSensitiveParams(url);
 
-    console.log('[WS] Proxying WebSocket connection to Moltbot');
+    console.log('[WS] Proxying WebSocket connection');
     if (debugLogs) {
       console.log('[WS] URL:', url.pathname + redactedSearch);
     }
 
     // Inject gateway token into WebSocket request if not already present.
-    // CF Access redirects strip query params, so authenticated users lose ?token=.
-    // Since the user already passed CF Access auth, we inject the token server-side.
+    // Session auth replaces CF Access, so we inject the token server-side.
     let wsRequest = request;
     if (c.env.MOLTBOT_GATEWAY_TOKEN && !url.searchParams.has('token')) {
       const tokenUrl = new URL(url.toString());
@@ -347,7 +299,7 @@ app.all('*', async (c) => {
     containerWs.addEventListener('message', (event) => {
       if (debugLogs) {
         console.log(
-          '[WS] Container -> Client (raw):',
+          '[WS] Container -> Client:',
           typeof event.data,
           typeof event.data === 'string' ? event.data.slice(0, 500) : '(binary)',
         );
@@ -358,23 +310,12 @@ app.all('*', async (c) => {
       if (typeof data === 'string') {
         try {
           const parsed = JSON.parse(data);
-          if (debugLogs) {
-            console.log('[WS] Parsed JSON, has error.message:', !!parsed.error?.message);
-          }
           if (parsed.error?.message) {
-            if (debugLogs) {
-              console.log('[WS] Original error.message:', parsed.error.message);
-            }
             parsed.error.message = transformErrorMessage(parsed.error.message, url.host);
-            if (debugLogs) {
-              console.log('[WS] Transformed error.message:', parsed.error.message);
-            }
             data = JSON.stringify(parsed);
           }
-        } catch (e) {
-          if (debugLogs) {
-            console.log('[WS] Not JSON or parse error:', e);
-          }
+        } catch {
+          // Not JSON, pass through
         }
       }
 
@@ -430,17 +371,11 @@ app.all('*', async (c) => {
 
   console.log('[HTTP] Proxying:', url.pathname + url.search);
   const httpResponse = await sandbox.containerFetch(request, MOLTBOT_PORT);
-  console.log('[HTTP] Response status:', httpResponse.status);
-
-  // Add debug header to verify worker handled the request
-  const newHeaders = new Headers(httpResponse.headers);
-  newHeaders.set('X-Worker-Debug', 'proxy-to-moltbot');
-  newHeaders.set('X-Debug-Path', url.pathname);
 
   return new Response(httpResponse.body, {
     status: httpResponse.status,
     statusText: httpResponse.statusText,
-    headers: newHeaders,
+    headers: httpResponse.headers,
   });
 });
 

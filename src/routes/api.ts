@@ -236,7 +236,8 @@ adminApi.get('/storage', async (c) => {
 adminApi.post('/storage/sync', async (c) => {
   const sandbox = c.get('sandbox');
 
-  const result = await syncToR2(sandbox, c.env);
+  const poeUser = c.get('poeUser');
+  const result = await syncToR2(sandbox, c.env, poeUser?.userHash);
 
   if (result.success) {
     return c.json({

@@ -42,6 +42,9 @@ export interface MoltbotEnv {
   BROWSER?: Fetcher;
   CDP_SECRET?: string; // Shared secret for CDP endpoint authentication
   WORKER_URL?: string; // Public URL of the worker (for CDP endpoint)
+  // PoeClaw session auth
+  SESSION_SECRET?: string; // HMAC-SHA256 key for session cookies
+  ENCRYPTION_SECRET?: string; // AES-GCM key for encrypting stored API keys
 }
 
 /**
@@ -53,6 +56,24 @@ export interface AccessUser {
 }
 
 /**
+ * Poe session user (from session cookie)
+ */
+export interface PoeSessionUser {
+  userHash: string; // SHA-256 hash used as DO ID
+  keyLast4: string; // Last 4 chars of API key for display
+  models: PoeModel[]; // Available models from /v1/models
+  createdAt: number; // Session creation timestamp (epoch ms)
+}
+
+/**
+ * Poe model from /v1/models response
+ */
+export interface PoeModel {
+  id: string; // e.g., "Claude-Sonnet-4.5"
+  name: string; // Display name
+}
+
+/**
  * Hono app environment type
  */
 export type AppEnv = {
@@ -60,6 +81,7 @@ export type AppEnv = {
   Variables: {
     sandbox: Sandbox;
     accessUser?: AccessUser;
+    poeUser?: PoeSessionUser;
   };
 };
 
