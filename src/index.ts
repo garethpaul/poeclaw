@@ -38,6 +38,12 @@ function transformErrorMessage(message: string, host: string): string {
   return message;
 }
 
+/** RFC 6455 §7.4: codes 1005 and 1006 are reserved and must not be sent in a Close frame */
+function safeCloseCode(code: number): number {
+  if (code === 1005 || code === 1006) return 1011;
+  return code;
+}
+
 export { Sandbox };
 
 // Main app
@@ -103,10 +109,16 @@ app.use('*', async (c, next) => {
   const token = extractSessionToken(cookieHeader);
 
   if (!token) {
-    // No session — redirect to login for HTML requests, 401 for API
+    // No session — serve SPA login page for HTML requests, 401 for API
     const acceptsHtml = c.req.header('Accept')?.includes('text/html');
     if (acceptsHtml) {
-      return c.redirect('/');
+      try {
+        const url = new URL('/index.html', c.req.url);
+        return await c.env.ASSETS.fetch(new Request(url));
+      } catch (err) {
+        console.error('[SESSION] ASSETS.fetch failed:', err);
+        return c.text('SPA not available. Run: make build', 500);
+      }
     }
     return c.json({ error: 'Authentication required', hint: 'POST /api/auth/login' }, 401);
   }
@@ -116,7 +128,13 @@ app.use('*', async (c, next) => {
   if (!poeUser) {
     const acceptsHtml = c.req.header('Accept')?.includes('text/html');
     if (acceptsHtml) {
-      return c.redirect('/');
+      try {
+        const url = new URL('/index.html', c.req.url);
+        return await c.env.ASSETS.fetch(new Request(url));
+      } catch (err) {
+        console.error('[SESSION] ASSETS.fetch failed:', err);
+        return c.text('SPA not available. Run: make build', 500);
+      }
     }
     return c.json({ error: 'Session expired or invalid' }, 401);
   }
@@ -167,7 +185,9 @@ app.all('*', async (c) => {
     // Decrypt per-user Poe API key from sandbox storage
     if (c.env.ENCRYPTION_SECRET) {
       try {
-        const readResult = await sandbox.exec('cat /tmp/poeclaw/encrypted-key 2>/dev/null || echo ""');
+        const readResult = await sandbox.exec(
+          'cat /tmp/poeclaw/encrypted-key 2>/dev/null || echo ""',
+        );
         const encryptedKey = readResult.stdout?.trim();
         if (encryptedKey) {
           envOverrides.POE_API_KEY = await decryptApiKey(encryptedKey, c.env.ENCRYPTION_SECRET);
@@ -316,7 +336,7 @@ app.all('*', async (c) => {
       if (debugLogs) {
         console.log('[WS] Client closed:', event.code, event.reason);
       }
-      containerWs.close(event.code, event.reason);
+      containerWs.close(safeCloseCode(event.code), event.reason);
     });
 
     containerWs.addEventListener('close', (event) => {
@@ -331,7 +351,7 @@ app.all('*', async (c) => {
       if (debugLogs) {
         console.log('[WS] Transformed close reason:', reason);
       }
-      serverWs.close(event.code, reason);
+      serverWs.close(safeCloseCode(event.code), reason);
     });
 
     // Handle errors

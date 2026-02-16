@@ -1,15 +1,31 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { MOLTBOT_PORT } from '../config';
-import { findExistingMoltbotProcess } from '../gateway';
 
 /**
- * Public routes - NO Cloudflare Access authentication required
+ * Public routes - NO authentication required
  *
- * These routes are mounted BEFORE the auth middleware is applied.
- * Includes: health checks, static assets, and public API endpoints.
+ * These routes are mounted BEFORE the session middleware.
+ * Includes: SPA shell, static assets, health checks.
  */
 const publicRoutes = new Hono<AppEnv>();
+
+// GET / - Serve the PoeClaw SPA (login or chat, handled client-side by App.tsx)
+publicRoutes.get('/', async (c) => {
+  try {
+    // Request /index.html explicitly to avoid auto-trailing-slash redirects
+    const url = new URL('/index.html', c.req.url);
+    return await c.env.ASSETS.fetch(new Request(url));
+  } catch (err) {
+    console.error('[PUBLIC] ASSETS.fetch failed:', err);
+    return c.text('SPA not available. Run: make build', 500);
+  }
+});
+
+// GET /assets/* - Serve SPA static assets (JS, CSS bundles from Vite build)
+publicRoutes.get('/assets/*', (c) => {
+  return c.env.ASSETS.fetch(c.req.raw);
+});
 
 // GET /sandbox-health - Health check endpoint
 publicRoutes.get('/sandbox-health', (c) => {
@@ -28,43 +44,6 @@ publicRoutes.get('/logo.png', (c) => {
 // GET /logo-small.png - Serve small logo from ASSETS binding
 publicRoutes.get('/logo-small.png', (c) => {
   return c.env.ASSETS.fetch(c.req.raw);
-});
-
-// GET /api/status - Public health check for gateway status (no auth required)
-publicRoutes.get('/api/status', async (c) => {
-  const sandbox = c.get('sandbox');
-
-  try {
-    const process = await findExistingMoltbotProcess(sandbox);
-    if (!process) {
-      return c.json({ ok: false, status: 'not_running' });
-    }
-
-    // Process exists, check if it's actually responding
-    // Try to reach the gateway with a short timeout
-    try {
-      await process.waitForPort(18789, { mode: 'tcp', timeout: 5000 });
-      return c.json({ ok: true, status: 'running', processId: process.id });
-    } catch {
-      return c.json({ ok: false, status: 'not_responding', processId: process.id });
-    }
-  } catch (err) {
-    return c.json({
-      ok: false,
-      status: 'error',
-      error: err instanceof Error ? err.message : 'Unknown error',
-    });
-  }
-});
-
-// GET /_admin/assets/* - Admin UI static assets (CSS, JS need to load for login redirect)
-// Assets are built to dist/client with base "/_admin/"
-publicRoutes.get('/_admin/assets/*', async (c) => {
-  const url = new URL(c.req.url);
-  // Rewrite /_admin/assets/* to /assets/* for the ASSETS binding
-  const assetPath = url.pathname.replace('/_admin/assets/', '/assets/');
-  const assetUrl = new URL(assetPath, url.origin);
-  return c.env.ASSETS.fetch(new Request(assetUrl.toString(), c.req.raw));
 });
 
 export { publicRoutes };

@@ -109,17 +109,14 @@ auth.post('/login', async (c) => {
 
 // POST /api/auth/logout - Clear session
 auth.post('/logout', (c) => {
-  return c.json(
-    { ok: true },
-    200,
-    {
-      'Set-Cookie': clearSessionCookie(),
-    },
-  );
+  return c.json({ ok: true }, 200, {
+    'Set-Cookie': clearSessionCookie(),
+  });
 });
 
 // GET /api/auth/me - Return current session info (if valid)
 // Auth routes are before session middleware, so we verify the token directly
+// NOTE: No DEV_MODE bypass — users must always enter their Poe API key
 auth.get('/me', async (c) => {
   const sessionSecret = c.env?.SESSION_SECRET;
   if (!sessionSecret) {
