@@ -16,11 +16,11 @@ describe('validatePoeApiKey', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('rejects key without proper prefix', async () => {
+  it('rejects key that is too short', async () => {
     // Threat model: format checks must reject before any network call
     const fetchMock = vi.fn().mockRejectedValue(new Error('should not call fetch'));
     vi.stubGlobal('fetch', fetchMock);
-    const result = await validatePoeApiKey('not-a-poe-key');
+    const result = await validatePoeApiKey('short');
     expect(result.valid).toBe(false);
     expect(result.error).toMatch(/format/i);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -65,10 +65,7 @@ describe('validatePoeApiKey', () => {
   });
 
   it('handles network errors gracefully', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockRejectedValue(new Error('Network error')),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
 
     const result = await validatePoeApiKey('pb-test-key-12345');
     expect(result.valid).toBe(false);

@@ -2,7 +2,11 @@ import { useState } from 'react';
 import './LoginPage.css';
 
 interface LoginPageProps {
-  onLogin: (data: { userHash: string; keyLast4: string; models: Array<{ id: string; name: string }> }) => void;
+  onLogin: (data: {
+    userHash: string;
+    keyLast4: string;
+    models: Array<{ id: string; name: string }>;
+  }) => void;
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
@@ -21,7 +25,12 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apiKey: apiKey.trim() }),
       });
-      const data = await res.json() as { error?: string; userHash: string; keyLast4: string; models: Array<{ id: string; name: string }> };
+      const data = (await res.json()) as {
+        error?: string;
+        userHash: string;
+        keyLast4: string;
+        models: Array<{ id: string; name: string }>;
+      };
 
       if (!res.ok) {
         setError(data.error || 'Login failed');
@@ -52,7 +61,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="pb-..."
+              placeholder="Your Poe API key"
               disabled={loading}
               autoFocus
               autoComplete="off"

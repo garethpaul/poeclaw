@@ -17,8 +17,8 @@ export async function validatePoeApiKey(apiKey: string): Promise<PoeValidationRe
     return { valid: false, error: 'API key is empty' };
   }
 
-  if (!apiKey.startsWith('pb-') || apiKey.length < 10 || /\s/.test(apiKey)) {
-    return { valid: false, error: 'Invalid key format — Poe keys start with "pb-"' };
+  if (apiKey.length < 10 || /\s/.test(apiKey)) {
+    return { valid: false, error: 'Invalid key format' };
   }
 
   try {
