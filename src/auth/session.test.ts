@@ -26,7 +26,7 @@ describe('hashApiKey', () => {
     const hash1 = await hashApiKey('pb-test-key-12345');
     const hash2 = await hashApiKey('pb-test-key-12345');
     expect(hash1).toBe(hash2);
-    expect(hash1).toMatch(/^[a-f0-9]{64}$/); // SHA-256 hex
+    expect(hash1).toMatch(/^[a-f0-9]{63}$/); // SHA-256 hex truncated to 63 chars (sandbox ID limit)
   });
 
   it('produces different hashes for different keys', async () => {

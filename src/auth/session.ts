@@ -8,9 +8,11 @@ const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 export async function hashApiKey(apiKey: string): Promise<string> {
   const data = new TextEncoder().encode(apiKey);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  // Truncate to 63 hex chars to fit Cloudflare Sandbox ID limit (1-63 chars)
   return Array.from(new Uint8Array(hashBuffer))
     .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+    .join('')
+    .slice(0, 63);
 }
 
 /**

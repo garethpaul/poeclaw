@@ -111,7 +111,7 @@ describe('POST /api/auth/login', () => {
 
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.ok).toBe(true);
-    expect(body.userHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(body.userHash).toMatch(/^[a-f0-9]{63}$/);
     expect(body.keyLast4).toBe('2345');
     expect(body.models).toHaveLength(1);
 
@@ -321,7 +321,7 @@ describe('Login → /me flow', () => {
 
     const body = (await meRes.json()) as Record<string, unknown>;
     expect(body.authenticated).toBe(true);
-    expect(body.userHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(body.userHash).toMatch(/^[a-f0-9]{63}$/);
     expect(body.keyLast4).toBe('2345');
     expect(body.models).toHaveLength(1);
   });
