@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "private": true,
-  "description": "Run Moltbot personal AI assistant in a Cloudflare Sandbox",
+  "description": "Multi-tenant OpenClaw platform powered by Poe API keys",
   "scripts": {
     "build": "vite build",
     "deploy": "npm run build && wrangler deploy",

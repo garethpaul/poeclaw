@@ -13,10 +13,10 @@
  */
 
 import { Hono } from 'hono';
-import { getSandbox, Sandbox, type SandboxOptions } from '@cloudflare/sandbox';
+import { getSandbox, Sandbox } from '@cloudflare/sandbox';
 
-import type { AppEnv, MoltbotEnv } from './types';
-import { MOLTBOT_PORT } from './config';
+import type { AppEnv } from './types';
+import { MOLTBOT_PORT, buildSandboxOptions } from './config';
 import { verifySessionToken, extractSessionToken, decryptApiKey } from './auth/session';
 import { ensureMoltbotGateway, findExistingMoltbotProcess } from './gateway';
 import { publicRoutes, api, auth, debug, cdp } from './routes';
@@ -39,21 +39,6 @@ function transformErrorMessage(message: string, host: string): string {
 }
 
 export { Sandbox };
-
-/**
- * Build sandbox options for multi-tenant PoeClaw.
- * Default is sleepAfter '1h' to bound per-user container memory.
- * Use 'never' (keepAlive) only for single-tenant dev mode.
- */
-function buildSandboxOptions(env: MoltbotEnv): SandboxOptions {
-  const sleepAfter = env.SANDBOX_SLEEP_AFTER?.toLowerCase() || '1h';
-
-  if (sleepAfter === 'never') {
-    return { keepAlive: true };
-  }
-
-  return { sleepAfter };
-}
 
 // Main app
 const app = new Hono<AppEnv>();

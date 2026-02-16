@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { getSandbox } from '@cloudflare/sandbox';
 import type { AppEnv } from '../types';
+import { buildSandboxOptions } from '../config';
 import { validatePoeApiKey } from '../auth/poe';
 import {
   hashApiKey,
@@ -84,7 +85,8 @@ auth.post('/login', async (c) => {
 
   // Resolve per-user sandbox and store encrypted key
   // Auth routes are mounted before session middleware, so we resolve the sandbox directly
-  const sandbox = getSandbox(c.env.Sandbox, userHash, { sleepAfter: '1h' });
+  const options = buildSandboxOptions(c.env);
+  const sandbox = getSandbox(c.env.Sandbox, userHash, options);
   c.set('sandbox', sandbox);
   await sandbox.exec(
     `mkdir -p /tmp/poeclaw && echo '${encryptedKey}' > /tmp/poeclaw/encrypted-key`,
